@@ -1,0 +1,60 @@
+from django.db import models
+from django.contrib.auth.models import (BaseUserManager, AbstractBaseUser, PermissionsMixin, Group, Permission)
+
+# Create custom user manager.
+class UserManager(BaseUserManager):
+
+    def create_user(self, username, email, password=None):
+        if username is None:
+            raise TypeError('Users should have a username')
+        if email is None:
+            raise TypeError('Users should have an Email')
+
+        user = self.model(username=username, email=self.normalize_email(email))
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, username, email, password=None):
+        if password is None:
+            raise TypeError("Superusers must have a password.")
+        user = self.create_user(username, email, password)
+        user.is_staff = True
+        user.role = 'Admin'
+        user.is_superuser = True
+        user.save(using=self._db)
+        return user
+    
+class CustomUser(AbstractBaseUser, PermissionsMixin):
+    username = models.CharField(max_length=100, unique=True, db_index=True)
+    email = models.EmailField(max_length=255, unique=True, db_index=True)
+    email_verified = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    groups = models.ManyToManyField(
+        Group,
+        verbose_name='groups',
+        blank=True,
+        help_text='The groups this user belongs to. A user will get all permissions granted to each of their groups.',
+        related_name="customuser_set",
+        related_query_name="customuser",
+    )
+    user_permissions = models.ManyToManyField(
+        Permission,
+        verbose_name='user permissions',
+        blank=True,
+        help_text='Specific permissions for this user.',
+        related_name="customuser_set",
+        related_query_name="customuser",
+    )
+
+    objects = UserManager()
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['username']
+
+    def __str__(self) -> str:
+        return f"{self.username} | {self.id}"
