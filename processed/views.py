@@ -4,9 +4,8 @@ import pandas as pd
 import numpy as np
 from joblib import load
 from datetime import datetime
-from django.http import JsonResponse, HttpResponse
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from django.http import HttpResponse
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .models import ProcessedFile
 from .serializers import ProcessedFileSerializer
@@ -58,12 +57,12 @@ def new_task(request):
 def mark_upload_complete(request):
     """
     @desc     Mark unprocessed file as ready to process after direct upload to S3
-    @route    POST /api/v1/air-quality/mark-upload-complete/{task_id}
+    @route    POST /api/v1/air-quality/mark-upload-complete/
     @access   Private
     @return   Json
     """
+    task_id = request.data.get('task_id')
     try:
-        task_id = request.task_id
 
         file_entry = ProcessedFile.objects.get(task_id=task_id)
         file_entry.status = 'Ready to Process'
