@@ -20,17 +20,15 @@ load_dotenv()
 def generate_task_id():
     return str(uuid.uuid4())
 
-@api_view(['POST'])
-@permission_classes((IsAuthenticated,))
+@api_view(['GET'])
 def new_task(request):
     """
     @desc     Create a new task and return presigned URL for direct upload to S3
-    @route    POST /api/v1/air-quality/new-task
+    @route    GET /api/v1/air-quality/new-task
     @access   Private
     @return   Json
     """
     try:
-        user = request.user
         task_id = generate_task_id()
 
         s3 = boto3.client('s3')
@@ -45,7 +43,6 @@ def new_task(request):
         )
 
         file_entry = ProcessedFile.objects.create(
-            user=user,
             unprocessed_file_url=presigned_url,
             task_id=task_id,
             status='Ready to Upload'
@@ -58,8 +55,7 @@ def new_task(request):
         return Response({'message': 'Failed to generate presigned URL', 'error': str(e)}, status=500)
 
 @api_view(['POST'])
-@permission_classes((IsAuthenticated,))
-def mark_upload_complete(request, task_id):
+def mark_upload_complete(request):
     """
     @desc     Mark unprocessed file as ready to process after direct upload to S3
     @route    POST /api/v1/air-quality/mark-upload-complete/{task_id}
@@ -67,9 +63,9 @@ def mark_upload_complete(request, task_id):
     @return   Json
     """
     try:
-        user = request.user
+        task_id = request.task_id
 
-        file_entry = ProcessedFile.objects.get(user=user, task_id=task_id)
+        file_entry = ProcessedFile.objects.get(task_id=task_id)
         file_entry.status = 'Ready to Process'
         file_entry.save()
 
@@ -95,7 +91,6 @@ def preprocess_data(df):
     return df.drop(columns=['timestamp'])
 
 @api_view(['POST'])
-@permission_classes((IsAuthenticated,))
 def process_file(request):
 
     """
@@ -146,8 +141,7 @@ def process_file(request):
         return Response({'message': f'Failed to process file: {str(e)}'}, status=500)
 
 @api_view(['GET'])
-@permission_classes((IsAuthenticated,))
-def file_status(request, task_id):
+def file_status(request):
     """
     @desc     Get the status of a processed file
     @route    GET /api/v1/air-quality/file-status/{task_id}
@@ -155,9 +149,8 @@ def file_status(request, task_id):
     @return   Json
     """
     try:
-        user = request.user
-
-        file_entry = ProcessedFile.objects.get(user=user, task_id=task_id)
+        task_id = request.task_id
+        file_entry = ProcessedFile.objects.get(task_id=task_id)
 
         serializer = ProcessedFileSerializer(file_entry)
         return Response({'status': file_entry.status, 'data': serializer.data}, status=200)
@@ -169,8 +162,7 @@ def file_status(request, task_id):
         return Response({'message': 'Failed to retrieve file status', 'error': str(e)}, status=500)
 
 @api_view(['GET'])
-@permission_classes((IsAuthenticated,))
-def download_processed_file(request, task_id):
+def download_processed_file(request):
     """
     @desc     Download the processed file
     @route    GET /api/v1/air-quality/download-processed-file/{task_id}
@@ -178,9 +170,9 @@ def download_processed_file(request, task_id):
     @return   HttpResponse
     """
     try:
-        user = request.user
+        task_id = request.task_id
 
-        file_entry = ProcessedFile.objects.get(user=user, task_id=task_id)
+        file_entry = ProcessedFile.objects.get(ask_id=task_id)
         processed_file_url = file_entry.processed_file_url
 
         s3 = boto3.client('s3')
@@ -195,56 +187,3 @@ def download_processed_file(request, task_id):
 
     except Exception as e:
         return Response({'message': 'Failed to download processed file', 'error': str(e)}, status=500)
-
-@api_view(['GET'])
-@permission_classes((IsAuthenticated,))
-def user_files(request):
-    """
-    @desc     Get details of all processed and unprocessed files for the current user
-    @route    GET /api/v1/air-quality/user-files
-    @access   Private
-    @return   Json
-    """
-    try:
-        user = request.user
-
-        files = ProcessedFile.objects.filter(user=user)
-        files_data = []
-        for file_entry in files:
-            serializer = ProcessedFileSerializer(file_entry)
-            files_data.append(serializer.data)
-
-        return Response({'message': 'Files retrieved successfully', 'files': files_data}, status=200)
-
-    except Exception as e:
-        return Response({'message': 'Failed to retrieve files', 'error': str(e)}, status=500)
-
-@api_view(['DELETE'])
-@permission_classes((IsAuthenticated,))
-def delete_file(request, task_id):
-    """
-    @desc     Delete a processed file and associated records
-    @route    DELETE /api/v1/air-quality/delete-file/{task_id}
-    @access   Private
-    @return   Json
-    """
-    try:
-        user = request.user
-
-        file_entry = ProcessedFile.objects.get(user=user, task_id=task_id)
-
-        s3 = boto3.client('s3')
-        s3.delete_object(Bucket='your-s3-bucket', Key=file_entry.unprocessed_file_url.split('/')[-1])
-
-        if file_entry.processed_file_url:
-            s3.delete_object(Bucket='your-s3-bucket', Key=file_entry.processed_file_url.split('/')[-1])
-
-        file_entry.delete()
-
-        return Response({'message': 'File deleted successfully'}, status=200)
-
-    except ProcessedFile.DoesNotExist:
-        return Response({'message': 'File not found'}, status=404)
-
-    except Exception as e:
-        return Response({'message': 'Failed to delete file', 'error': str(e)}, status=500)
