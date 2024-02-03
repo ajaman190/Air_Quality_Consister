@@ -30,13 +30,13 @@ def new_task(request):
     try:
         task_id = generate_task_id()
 
-        s3 = boto3.client('s3')
+        s3 = boto3.client('s3', region_name=os.environ.get('AWS_S3_REGION_NAME'))
         presigned_url = s3.generate_presigned_url(
             'put_object',
             Params={
-                'Bucket': 'your-s3-bucket',
+                'Bucket': os.environ.get('AWS_STORAGE_BUCKET_NAME'),
                 'Key': f"{task_id}_unprocessed.csv",
-                'ContentType': 'text/csv',
+                'ContentType': 'text/csv'
             },
             ExpiresIn=30000,
         )
@@ -102,7 +102,7 @@ def process_file(request):
     task_id = request.data.get('task_id')
     try:
         file_entry = ProcessedFile.objects.get(task_id=task_id)
-        unprocessed_file_url = file_entry.unprocessed_file_url
+        unprocessed_file_url = f"{os.environ.get('AWS_S3_BUCKET_URL')}/{task_id}_unprocessed.csv"
 
         df = pd.read_csv(unprocessed_file_url)
         df = preprocess_data(df)
@@ -118,9 +118,9 @@ def process_file(request):
         processed_file_path = f'{task_id}_processed.csv'
         df.to_csv(processed_file_path, index=False)
 
-        s3 = boto3.client('s3')
-        response = s3.upload_file(processed_file_path, os.getenv('AWS_STORAGE_BUCKET_NAME'), processed_file_path)
-        processed_file_url = f"{os.getenv('AWS_STORAGE_BUCKET_URL')}/{processed_file_path}"
+        s3 = boto3.client('s3', region_name=os.environ.get('AWS_S3_REGION_NAME'))
+        response = s3.upload_file(processed_file_path, os.environ.get('AWS_STORAGE_BUCKET_NAME'), processed_file_path)
+        processed_file_url = f"{os.environ.get('AWS_S3_BUCKET_URL')}/{processed_file_path}"
 
         file_entry.processed_file_url = processed_file_url
         file_entry.status = 'Processed'
@@ -137,6 +137,7 @@ def process_file(request):
     except ProcessedFile.DoesNotExist:
         return Response({'message': 'File not found'}, status=404)
     except Exception as e:
+        print(e)
         return Response({'message': f'Failed to process file: {str(e)}'}, status=500)
 
 @api_view(['GET'])
@@ -174,7 +175,7 @@ def download_processed_file(request):
         file_entry = ProcessedFile.objects.get(ask_id=task_id)
         processed_file_url = file_entry.processed_file_url
 
-        s3 = boto3.client('s3')
+        s3 = boto3.client('s3', region_name=os.environ.get('AWS_S3_REGION_NAME'))
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = f'attachment; filename="{task_id}_processed.csv"'
         s3.download_fileobj('your-s3-bucket', processed_file_url, response)
